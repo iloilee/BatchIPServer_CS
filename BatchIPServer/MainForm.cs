@@ -55,11 +55,12 @@ namespace BatchIPServer
                 _dpiScale = Math.Max(1.0f, g.DpiX / 96.0f);
             }
 
-            var workArea = Screen.FromControl(this).WorkingArea;
-            int targetW = Math.Min(D(1320), workArea.Width - 24);
-            int targetH = Math.Min(D(790), workArea.Height - 24);
+            var workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+            int targetW = Math.Min(D(1220), (int)(workArea.Width * 0.90));
+            int targetH = Math.Min(D(760), (int)(workArea.Height * 0.90));
+            this.MinimumSize = new Size(Math.Min(D(1020), workArea.Width - 20), Math.Min(D(620), workArea.Height - 20));
             this.Size = new Size(targetW, targetH);
-            this.MinimumSize = new Size(Math.Min(D(1120), workArea.Width - 24), Math.Min(D(660), workArea.Height - 24));
+            CenterOnScreen(workArea);
 
             string exeDir = Path.GetDirectoryName(Application.ExecutablePath);
             _appDir = string.IsNullOrEmpty(exeDir) ? AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') : exeDir;
@@ -109,9 +110,9 @@ namespace BatchIPServer
                 ColumnCount = 3,
                 RowCount = 1
             };
-            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
-            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.34F));
-            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33F));
+            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
+            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
+            tlpTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36F));
             tlpTop.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             pnlTop.Controls.Add(tlpTop);
 
@@ -121,11 +122,12 @@ namespace BatchIPServer
             _gbIp = CreateCard("1. Dải IP && Sinh số thứ tự");
             tlpTop.Controls.Add(_gbIp, 0, 0);
 
-            var tlpIp = MakeCardGrid(6);
+            var tlpIp = MakeCardGrid(7);
             tlpIp.ColumnCount = 2;
             tlpIp.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tlpIp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             for (int r = 0; r < 6; r++) tlpIp.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tlpIp.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _gbIp.Controls.Add(tlpIp);
 
             // Row 0: Preset nhanh
@@ -214,11 +216,12 @@ namespace BatchIPServer
             _gbNet = CreateCard("2. Gateway (1 hoặc 2 Gateway) && DNS");
             tlpTop.Controls.Add(_gbNet, 1, 0);
 
-            var tlpNet = MakeCardGrid(6);
+            var tlpNet = MakeCardGrid(7);
             tlpNet.ColumnCount = 2;
             tlpNet.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             tlpNet.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             for (int r = 0; r < 6; r++) tlpNet.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tlpNet.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             _gbNet.Controls.Add(tlpNet);
 
             // Row 0: Chế độ Gateway
@@ -578,6 +581,11 @@ namespace BatchIPServer
 
             _dgv.DataError += (s, e) => { e.ThrowException = false; };
 
+            this.Load += (s, e) =>
+            {
+                CenterOnScreen(Screen.FromPoint(Cursor.Position).WorkingArea);
+            };
+
             this.Shown += (s, e) =>
             {
                 int desiredLogH = D(155);
@@ -589,6 +597,13 @@ namespace BatchIPServer
                 RecalculatePreview();
                 WriteLog("BatchIP Server (C# Native) sẵn sàng. Tiền tố lần này: '" + _txtNamePrefix.Text + "'", "INFO");
             };
+        }
+
+        private void CenterOnScreen(Rectangle workArea)
+        {
+            int x = workArea.X + Math.Max(0, (workArea.Width - this.Width) / 2);
+            int y = workArea.Y + Math.Max(0, (workArea.Height - this.Height) / 2);
+            this.Location = new Point(x, y);
         }
 
         private void SetSubnetPreset(string newBase)
