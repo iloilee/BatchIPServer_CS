@@ -1,0 +1,16 @@
+# Visual Studio / .NET Framework
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+# App runtime data
+BatchIP_Backups/
+BatchIP_Config.json
