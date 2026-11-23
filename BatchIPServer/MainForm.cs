@@ -21,6 +21,7 @@ namespace BatchIPServer
         private readonly List<AdapterItem> _adapters = new List<AdapterItem>();
         private AppConfig _savedCfg;
         private bool _suppressEvents;
+        private float _dpiScale = 1.0f;
 
         // Colors
         private readonly Color _clrBgMain = Color.FromArgb(243, 246, 250);
@@ -41,7 +42,7 @@ namespace BatchIPServer
         private RadioButton _rbAsc, _rbDesc;
         private CheckBox _chkRename, _chkSetDns, _chkClearOld, _chkDisableNetbios, _chkDisableFileShare, _chkDisableQoS, _chkDisableIPv6, _chkDisablePowerSave, _chkShowVirtual;
         private Button _btnNextPrefix, _btnResetDns, _btnCheckIp, _btnRollback, _btnRefresh, _btnApply;
-        private Panel _pnlToolbar, _pnlOnboard;
+        private Panel _pnlOnboard;
         private Label _lblSummary, _lblOnboardAlert;
         private SplitContainer _splitMain;
         private DataGridView _dgv;
@@ -49,6 +50,17 @@ namespace BatchIPServer
         public MainForm()
         {
             InitializeComponent();
+            using (var g = this.CreateGraphics())
+            {
+                _dpiScale = Math.Max(1.0f, g.DpiX / 96.0f);
+            }
+
+            var workArea = Screen.FromControl(this).WorkingArea;
+            int targetW = Math.Min(D(1320), workArea.Width - 24);
+            int targetH = Math.Min(D(790), workArea.Height - 24);
+            this.Size = new Size(targetW, targetH);
+            this.MinimumSize = new Size(Math.Min(D(1120), workArea.Width - 24), Math.Min(D(660), workArea.Height - 24));
+
             string exeDir = Path.GetDirectoryName(Application.ExecutablePath);
             _appDir = string.IsNullOrEmpty(exeDir) ? AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\') : exeDir;
             try
@@ -75,18 +87,20 @@ namespace BatchIPServer
             WireEvents();
         }
 
+        private int D(int px) => (int)Math.Round(px * _dpiScale);
+
         private void BuildUi()
         {
             this.Font = new Font("Segoe UI", 9F);
             this.BackColor = _clrBgMain;
             var regularFont = new Font("Segoe UI", 9F, FontStyle.Regular);
 
-            // --- Top 3-Column Container ---
+            // --- Top 3-Column Container (Auto-scaling height for DPI) ---
             var pnlTop = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 278,
-                Padding = new Padding(10, 8, 10, 4)
+                Height = D(286),
+                Padding = new Padding(D(10), D(8), D(10), D(4))
             };
 
             var tlpTop = new TableLayoutPanel
@@ -101,76 +115,115 @@ namespace BatchIPServer
             tlpTop.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             pnlTop.Controls.Add(tlpTop);
 
-            // Card 1: Dải IP & Sinh số thứ tự
+            // =========================================================================
+            // Card 1: Dải IP & Sinh số thứ tự (Dùng TableLayoutPanel để không bao giờ đè chữ)
+            // =========================================================================
             _gbIp = CreateCard("1. Dải IP && Sinh số thứ tự");
             tlpTop.Controls.Add(_gbIp, 0, 0);
 
-            _gbIp.Controls.Add(MakeLabel("Preset nhanh:", 12, 28, regularFont));
-            var btnSub1 = MakeFlatButton("192.168.1.", 104, 23, 96, 27, regularFont);
-            var btnSub254 = MakeFlatButton("192.168.254.", 206, 23, 108, 27, regularFont);
-            _gbIp.Controls.Add(btnSub1);
-            _gbIp.Controls.Add(btnSub254);
+            var tlpIp = MakeCardGrid(6);
+            tlpIp.ColumnCount = 2;
+            tlpIp.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tlpIp.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int r = 0; r < 6; r++) tlpIp.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            _gbIp.Controls.Add(tlpIp);
 
-            _gbIp.Controls.Add(MakeLabel("3 octet đầu:", 12, 64, regularFont));
-            _txtSubnetBase = new TextBox { Text = _savedCfg.SubnetBase, Font = regularFont, Location = new Point(104, 61), Size = new Size(104, 23) };
-            _cmbSubnetMask = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = regularFont, Location = new Point(214, 61), Size = new Size(194, 23) };
+            // Row 0: Preset nhanh
+            tlpIp.Controls.Add(MakeCellLabel("Preset nhanh:", regularFont), 0, 0);
+            var pnlSubBtns = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 2, 0, 4), Height = D(30) };
+            pnlSubBtns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48F));
+            pnlSubBtns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52F));
+            var btnSub1 = MakeGridButton("192.168.1.", regularFont);
+            var btnSub254 = MakeGridButton("192.168.254.", regularFont);
+            btnSub1.Margin = new Padding(0, 0, D(4), 0);
+            btnSub254.Margin = new Padding(D(2), 0, 0, 0);
+            pnlSubBtns.Controls.Add(btnSub1, 0, 0);
+            pnlSubBtns.Controls.Add(btnSub254, 1, 0);
+            tlpIp.Controls.Add(pnlSubBtns, 1, 0);
+
+            // Row 1: 3 octet đầu + Subnet Mask
+            tlpIp.Controls.Add(MakeCellLabel("3 octet đầu:", regularFont), 0, 1);
+            var pnlSubInputs = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 2, 0, 4), Height = D(28) };
+            pnlSubInputs.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42F));
+            pnlSubInputs.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58F));
+            _txtSubnetBase = new TextBox { Text = _savedCfg.SubnetBase, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 1, D(4), 0) };
+            _cmbSubnetMask = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(D(2), 1, 0, 0) };
             _cmbSubnetMask.Items.AddRange(new object[] { "255.255.255.0 (/24)", "255.255.0.0 (/16)", "255.255.255.128 (/25)", "255.255.255.192 (/26)" });
             _cmbSubnetMask.SelectedItem = _savedCfg.SubnetMask;
             if (_cmbSubnetMask.SelectedIndex < 0) _cmbSubnetMask.SelectedIndex = 0;
-            _gbIp.Controls.Add(_txtSubnetBase);
-            _gbIp.Controls.Add(_cmbSubnetMask);
+            pnlSubInputs.Controls.Add(_txtSubnetBase, 0, 0);
+            pnlSubInputs.Controls.Add(_cmbSubnetMask, 1, 0);
+            tlpIp.Controls.Add(pnlSubInputs, 1, 1);
 
-            _gbIp.Controls.Add(MakeLabel("IP bắt đầu (.x):", 12, 98, regularFont));
+            // Row 2: IP bắt đầu (.x) + Tăng/Giảm
+            tlpIp.Controls.Add(MakeCellLabel("IP bắt đầu (.x):", regularFont), 0, 2);
+            var flwStart = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 4) };
             _numStartOctet = new NumericUpDown
             {
                 Minimum = 1,
                 Maximum = 254,
                 Value = Math.Max(1, Math.Min(254, _savedCfg.StartOctet)),
                 Font = regularFont,
-                Location = new Point(104, 95),
-                Size = new Size(62, 23)
+                Width = D(62),
+                Margin = new Padding(0, 1, D(8), 0)
             };
-            _rbAsc = new RadioButton { Text = "Tăng (+1)", Font = regularFont, ForeColor = Color.Black, Location = new Point(174, 96), AutoSize = true };
-            _rbDesc = new RadioButton { Text = "Giảm (-1)", Font = regularFont, ForeColor = Color.Black, Location = new Point(258, 96), AutoSize = true };
+            _rbAsc = new RadioButton { Text = "Tăng (+1)", Font = regularFont, ForeColor = Color.Black, AutoSize = true, Margin = new Padding(0, 3, D(8), 0) };
+            _rbDesc = new RadioButton { Text = "Giảm (-1)", Font = regularFont, ForeColor = Color.Black, AutoSize = true, Margin = new Padding(0, 3, 0, 0) };
             if (_savedCfg.Direction == "Down") _rbDesc.Checked = true; else _rbAsc.Checked = true;
-            _gbIp.Controls.Add(_numStartOctet);
-            _gbIp.Controls.Add(_rbAsc);
-            _gbIp.Controls.Add(_rbDesc);
+            flwStart.Controls.AddRange(new Control[] { _numStartOctet, _rbAsc, _rbDesc });
+            tlpIp.Controls.Add(flwStart, 1, 2);
 
-            var btnSeq200 = MakeFlatButton("Preset: .200, .201, .202...", 12, 130, 172, 28, regularFont);
-            var btnSeq253 = MakeFlatButton("Preset: .253, .252, .251...", 190, 130, 172, 28, regularFont);
-            _gbIp.Controls.Add(btnSeq200);
-            _gbIp.Controls.Add(btnSeq253);
+            // Row 3: Preset .200 / .253 (chiếm 2 cột)
+            var pnlSeqBtns = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 4, 0, 6), Height = D(30) };
+            pnlSeqBtns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            pnlSeqBtns.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+            var btnSeq200 = MakeGridButton("Preset: .200, .201, .202...", regularFont);
+            var btnSeq253 = MakeGridButton("Preset: .253, .252, .251...", regularFont);
+            btnSeq200.Margin = new Padding(0, 0, D(4), 0);
+            btnSeq253.Margin = new Padding(D(2), 0, 0, 0);
+            pnlSeqBtns.Controls.Add(btnSeq200, 0, 0);
+            pnlSeqBtns.Controls.Add(btnSeq253, 1, 0);
+            tlpIp.Controls.Add(pnlSeqBtns, 0, 3);
+            tlpIp.SetColumnSpan(pnlSeqBtns, 2);
 
+            // Row 4: Đổi tên card theo IP
             _chkRename = new CheckBox
             {
                 Text = "Đổi tên card theo IP (VD: z200, z201, z202...)",
                 Font = regularFont,
                 ForeColor = Color.Black,
                 Checked = true,
-                Location = new Point(12, 172),
-                AutoSize = true
+                AutoSize = true,
+                Margin = new Padding(0, D(6), 0, D(4))
             };
-            _gbIp.Controls.Add(_chkRename);
+            tlpIp.Controls.Add(_chkRename, 0, 4);
+            tlpIp.SetColumnSpan(_chkRename, 2);
 
-            _gbIp.Controls.Add(MakeLabel("Ký tự tiền tố:", 12, 206, regularFont));
-            _txtNamePrefix = new TextBox { Font = regularFont, Location = new Point(104, 203), Size = new Size(56, 23) };
-            _btnNextPrefix = MakeFlatButton("Xoay ký tự", 166, 201, 92, 27, regularFont);
-            _gbIp.Controls.Add(_txtNamePrefix);
-            _gbIp.Controls.Add(_btnNextPrefix);
+            // Row 5: Ký tự tiền tố + Xoay ký tự
+            tlpIp.Controls.Add(MakeCellLabel("Ký tự tiền tố:", regularFont), 0, 5);
+            var flwPrefix = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0, 2, 0, 0) };
+            _txtNamePrefix = new TextBox { Font = regularFont, Width = D(58), Margin = new Padding(0, 2, D(6), 0) };
+            _btnNextPrefix = MakeFlatButton("Xoay ký tự", 0, 0, D(98), D(27), regularFont);
+            _btnNextPrefix.Margin = new Padding(0);
+            flwPrefix.Controls.AddRange(new Control[] { _txtNamePrefix, _btnNextPrefix });
+            tlpIp.Controls.Add(flwPrefix, 1, 5);
 
-            _gbIp.Resize += (s, e) =>
-            {
-                int avail = _gbIp.ClientSize.Width - 226;
-                if (avail >= 120) _cmbSubnetMask.Width = avail;
-            };
-
+            // =========================================================================
             // Card 2: Gateway & DNS
+            // =========================================================================
             _gbNet = CreateCard("2. Gateway (1 hoặc 2 Gateway) && DNS");
             tlpTop.Controls.Add(_gbNet, 1, 0);
 
-            _gbNet.Controls.Add(MakeLabel("Chế độ:", 12, 29, regularFont));
-            _cmbGwMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = regularFont, Location = new Point(88, 25), Size = new Size(320, 23) };
+            var tlpNet = MakeCardGrid(6);
+            tlpNet.ColumnCount = 2;
+            tlpNet.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tlpNet.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int r = 0; r < 6; r++) tlpNet.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            _gbNet.Controls.Add(tlpNet);
+
+            // Row 0: Chế độ Gateway
+            tlpNet.Controls.Add(MakeCellLabel("Chế độ:", regularFont), 0, 0);
+            _cmbGwMode = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 2, 0, 4) };
             _cmbGwMode.Items.AddRange(new object[]
             {
                 "Chung 1 Gateway (Tất cả dùng Gateway 1)",
@@ -180,96 +233,133 @@ namespace BatchIPServer
                 "Tùy chỉnh từng card trên bảng"
             });
             _cmbGwMode.SelectedIndex = 0;
-            _gbNet.Controls.Add(_cmbGwMode);
+            tlpNet.Controls.Add(_cmbGwMode, 1, 0);
 
-            _gbNet.Controls.Add(MakeLabel("Gateway 1:", 12, 64, regularFont));
-            _txtGw1 = new TextBox { Text = _savedCfg.Gateway1, Font = regularFont, Location = new Point(88, 61), Size = new Size(130, 23) };
-            _gbNet.Controls.Add(_txtGw1);
-            _gbNet.Controls.Add(MakeMutedLabel("(Gateway chính)", 224, 64, regularFont));
+            // Row 1: Gateway 1
+            tlpNet.Controls.Add(MakeCellLabel("Gateway 1:", regularFont), 0, 1);
+            var pnlGw1 = MakeTwoColRow(52F, 48F, D(28));
+            _txtGw1 = new TextBox { Text = _savedCfg.Gateway1, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 2, D(6), 0) };
+            pnlGw1.Controls.Add(_txtGw1, 0, 0);
+            pnlGw1.Controls.Add(MakeInlineMuted("(Gateway chính)", regularFont), 1, 0);
+            tlpNet.Controls.Add(pnlGw1, 1, 1);
 
-            _gbNet.Controls.Add(MakeLabel("Gateway 2:", 12, 98, regularFont));
-            _txtGw2 = new TextBox { Text = _savedCfg.Gateway2, Font = regularFont, Location = new Point(88, 95), Size = new Size(130, 23) };
-            _gbNet.Controls.Add(_txtGw2);
-            _gbNet.Controls.Add(MakeMutedLabel("(Trống nếu chỉ 1 Gateway)", 224, 98, regularFont));
+            // Row 2: Gateway 2
+            tlpNet.Controls.Add(MakeCellLabel("Gateway 2:", regularFont), 0, 2);
+            var pnlGw2 = MakeTwoColRow(52F, 48F, D(28));
+            _txtGw2 = new TextBox { Text = _savedCfg.Gateway2, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 2, D(6), 0) };
+            pnlGw2.Controls.Add(_txtGw2, 0, 0);
+            pnlGw2.Controls.Add(MakeInlineMuted("(Trống nếu chỉ 1 GW)", regularFont), 1, 0);
+            tlpNet.Controls.Add(pnlGw2, 1, 2);
 
+            // Row 3: Checkbox DNS
             _chkSetDns = new CheckBox
             {
                 Text = "Cấu hình DNS cho các card được chọn",
                 Font = regularFont,
                 ForeColor = Color.Black,
                 Checked = true,
-                Location = new Point(12, 136),
-                AutoSize = true
+                AutoSize = true,
+                Margin = new Padding(0, D(8), 0, D(4))
             };
-            _gbNet.Controls.Add(_chkSetDns);
+            tlpNet.Controls.Add(_chkSetDns, 0, 3);
+            tlpNet.SetColumnSpan(_chkSetDns, 2);
 
-            _gbNet.Controls.Add(MakeLabel("DNS Chính:", 12, 169, regularFont));
-            _txtDns1 = new TextBox { Text = _savedCfg.Dns1, Font = regularFont, Location = new Point(88, 166), Size = new Size(130, 23) };
-            _btnResetDns = MakeFlatButton("Google DNS", 224, 164, 102, 27, regularFont);
-            _gbNet.Controls.Add(_txtDns1);
-            _gbNet.Controls.Add(_btnResetDns);
+            // Row 4: DNS Chính + Google DNS
+            tlpNet.Controls.Add(MakeCellLabel("DNS Chính:", regularFont), 0, 4);
+            var pnlDns1 = MakeTwoColRow(52F, 48F, D(29));
+            _txtDns1 = new TextBox { Text = _savedCfg.Dns1, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 2, D(6), 0) };
+            _btnResetDns = MakeGridButton("Google DNS", regularFont);
+            _btnResetDns.Margin = new Padding(0, 0, 0, D(2));
+            pnlDns1.Controls.Add(_txtDns1, 0, 0);
+            pnlDns1.Controls.Add(_btnResetDns, 1, 0);
+            tlpNet.Controls.Add(pnlDns1, 1, 4);
 
-            _gbNet.Controls.Add(MakeLabel("DNS Phụ:", 12, 203, regularFont));
-            _txtDns2 = new TextBox { Text = _savedCfg.Dns2, Font = regularFont, Location = new Point(88, 200), Size = new Size(130, 23) };
-            _gbNet.Controls.Add(_txtDns2);
+            // Row 5: DNS Phụ
+            tlpNet.Controls.Add(MakeCellLabel("DNS Phụ:", regularFont), 0, 5);
+            var pnlDns2 = MakeTwoColRow(52F, 48F, D(28));
+            _txtDns2 = new TextBox { Text = _savedCfg.Dns2, Font = regularFont, Dock = DockStyle.Fill, Margin = new Padding(0, 2, D(6), 0) };
+            pnlDns2.Controls.Add(_txtDns2, 0, 0);
+            tlpNet.Controls.Add(pnlDns2, 1, 5);
 
-            _gbNet.Resize += (s, e) =>
-            {
-                int avail = _gbNet.ClientSize.Width - 100;
-                if (avail >= 150) _cmbGwMode.Width = avail;
-            };
-
+            // =========================================================================
             // Card 3: Tối ưu Server & Thao tác
+            // =========================================================================
             _gbOpt = CreateCard("3. Tối ưu Server && Thao tác");
             tlpTop.Controls.Add(_gbOpt, 2, 0);
 
-            _chkClearOld = MakeOptionCheck("Xóa sạch IP && Gateway cũ trước khi gán", 24, true, regularFont);
-            _chkDisableNetbios = MakeOptionCheck("Tắt NetBIOS over TCP/IP", 46, true, regularFont);
-            _chkDisableFileShare = MakeOptionCheck("Tắt File and Printer Sharing for Microsoft Networks", 68, true, regularFont);
-            _chkDisableQoS = MakeOptionCheck("Tắt QoS Packet Scheduler", 90, true, regularFont);
-            _chkDisableIPv6 = MakeOptionCheck("Tắt IPv6 (Internet Protocol Version 6)", 112, true, regularFont);
-            _chkDisablePowerSave = MakeOptionCheck("Tắt tiết kiệm điện NIC (Power Saving / EEE)", 134, false, regularFont);
-            _chkShowVirtual = MakeOptionCheck("Hiện cả card ảo (VMware, Hyper-V, VPN...)", 156, false, regularFont);
+            var tlpOpt = MakeCardGrid(9);
+            tlpOpt.ColumnCount = 1;
+            tlpOpt.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            for (int r = 0; r < 7; r++) tlpOpt.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            tlpOpt.RowStyles.Add(new RowStyle(SizeType.Absolute, D(34)));
+            tlpOpt.RowStyles.Add(new RowStyle(SizeType.Absolute, D(38)));
+            _gbOpt.Controls.Add(tlpOpt);
 
-            _gbOpt.Controls.AddRange(new Control[]
+            _chkClearOld = MakeFlowOptionCheck("Xóa sạch IP && Gateway cũ trước khi gán", true, regularFont);
+            _chkDisableNetbios = MakeFlowOptionCheck("Tắt NetBIOS over TCP/IP", true, regularFont);
+            _chkDisableFileShare = MakeFlowOptionCheck("Tắt File and Printer Sharing for Microsoft Networks", true, regularFont);
+            _chkDisableQoS = MakeFlowOptionCheck("Tắt QoS Packet Scheduler", true, regularFont);
+            _chkDisableIPv6 = MakeFlowOptionCheck("Tắt IPv6 (Internet Protocol Version 6)", true, regularFont);
+            _chkDisablePowerSave = MakeFlowOptionCheck("Tắt tiết kiệm điện NIC (Power Saving / EEE)", false, regularFont);
+            _chkShowVirtual = MakeFlowOptionCheck("Hiện cả card ảo (VMware, Hyper-V, VPN...)", false, regularFont);
+
+            tlpOpt.Controls.Add(_chkClearOld, 0, 0);
+            tlpOpt.Controls.Add(_chkDisableNetbios, 0, 1);
+            tlpOpt.Controls.Add(_chkDisableFileShare, 0, 2);
+            tlpOpt.Controls.Add(_chkDisableQoS, 0, 3);
+            tlpOpt.Controls.Add(_chkDisableIPv6, 0, 4);
+            tlpOpt.Controls.Add(_chkDisablePowerSave, 0, 5);
+            tlpOpt.Controls.Add(_chkShowVirtual, 0, 6);
+
+            var pnlActionRow = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1, Margin = new Padding(0, D(4), 0, D(4)) };
+            pnlActionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32F));
+            pnlActionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38F));
+            pnlActionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30F));
+
+            _btnCheckIp = MakeGridButton("Check trùng IP", regularFont);
+            _btnRollback = MakeGridButton("Khôi phục (Rollback)", regularFont);
+            _btnRefresh = MakeGridButton("Tải lại NIC", regularFont);
+            _btnCheckIp.Margin = new Padding(0, 0, D(4), 0);
+            _btnRollback.Margin = new Padding(D(2), 0, D(2), 0);
+            _btnRefresh.Margin = new Padding(D(4), 0, 0, 0);
+
+            pnlActionRow.Controls.Add(_btnCheckIp, 0, 0);
+            pnlActionRow.Controls.Add(_btnRollback, 1, 0);
+            pnlActionRow.Controls.Add(_btnRefresh, 2, 0);
+            tlpOpt.Controls.Add(pnlActionRow, 0, 7);
+
+            _btnApply = MakeGridButton("ÁP DỤNG", new Font("Segoe UI", 10F, FontStyle.Bold), true);
+            _btnApply.Margin = new Padding(0, D(2), 0, 0);
+            tlpOpt.Controls.Add(_btnApply, 0, 8);
+
+            // =========================================================================
+            // Middle Toolbar (FlowLayout + Right Summary Label)
+            // =========================================================================
+            var pnlToolbar = new Panel
             {
-                _chkClearOld, _chkDisableNetbios, _chkDisableFileShare,
-                _chkDisableQoS, _chkDisableIPv6, _chkDisablePowerSave, _chkShowVirtual
-            });
-
-            _btnCheckIp = MakeFlatButton("Check trùng IP", 12, 184, 112, 28, regularFont);
-            _btnRollback = MakeFlatButton("Khôi phục (Rollback)", 130, 184, 136, 28, regularFont);
-            _btnRefresh = MakeFlatButton("Tải lại NIC", 272, 184, 92, 28, regularFont);
-            _btnApply = MakeFlatButton("ÁP DỤNG", 12, 218, 396, 34, new Font("Segoe UI", 10F, FontStyle.Bold), true);
-
-            _gbOpt.Controls.AddRange(new Control[] { _btnCheckIp, _btnRollback, _btnRefresh, _btnApply });
-
-            _gbOpt.Resize += (s, e) =>
-            {
-                int innerW = _gbOpt.ClientSize.Width - 24;
-                if (innerW >= 200)
-                {
-                    const int gap = 6;
-                    int w1 = (int)Math.Floor((innerW - gap * 2) * 0.31);
-                    int w2 = (int)Math.Floor((innerW - gap * 2) * 0.39);
-                    int w3 = innerW - w1 - w2 - gap * 2;
-
-                    _btnCheckIp.SetBounds(12, 184, w1, 28);
-                    _btnRollback.SetBounds(12 + w1 + gap, 184, w2, 28);
-                    _btnRefresh.SetBounds(12 + w1 + gap + w2 + gap, 184, w3, 28);
-                    _btnApply.SetBounds(12, 218, innerW, 34);
-                }
+                Dock = DockStyle.Top,
+                Height = D(40),
+                Padding = new Padding(D(12), D(4), D(14), D(4))
             };
 
-            // --- Middle Toolbar ---
-            _pnlToolbar = new Panel { Dock = DockStyle.Top, Height = 38, Padding = new Padding(12, 4, 12, 4) };
-            var btnSelectAll = MakeFlatButton("Chọn tất cả", 14, 5, 88, 27, regularFont);
-            var btnSelectUp = MakeFlatButton("Chỉ chọn card Up", 108, 5, 116, 27, regularFont);
-            var btnUnselectAll = MakeFlatButton("Bỏ chọn hết", 230, 5, 92, 27, regularFont);
-            var btnMoveUp = MakeFlatButton("Lên thứ tự", 338, 5, 86, 27, regularFont);
-            var btnMoveDown = MakeFlatButton("Xuống thứ tự", 430, 5, 96, 27, regularFont);
-            var btnBlink = MakeFlatButton("Nháy cổng NIC", 540, 5, 112, 27, regularFont);
-            var btnOpenNcpa = MakeFlatButton("Mở Network Connections", 658, 5, 162, 27, regularFont);
+            var tlpToolbar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1 };
+            tlpToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tlpToolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            pnlToolbar.Controls.Add(tlpToolbar);
+
+            var flwToolbarBtns = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoSize = true, WrapContents = false, Margin = new Padding(0) };
+            var btnSelectAll = MakeAutoToolbarButton("Chọn tất cả", regularFont);
+            var btnSelectUp = MakeAutoToolbarButton("Chỉ chọn card Up", regularFont);
+            var btnUnselectAll = MakeAutoToolbarButton("Bỏ chọn hết", regularFont);
+            var btnMoveUp = MakeAutoToolbarButton("Lên thứ tự", regularFont);
+            var btnMoveDown = MakeAutoToolbarButton("Xuống thứ tự", regularFont);
+            var btnBlink = MakeAutoToolbarButton("Nháy cổng NIC", regularFont);
+            var btnOpenNcpa = MakeAutoToolbarButton("Mở Network Connections", regularFont);
+            flwToolbarBtns.Controls.AddRange(new Control[]
+            {
+                btnSelectAll, btnSelectUp, btnUnselectAll, btnMoveUp, btnMoveDown, btnBlink, btnOpenNcpa
+            });
+            tlpToolbar.Controls.Add(flwToolbarBtns, 0, 0);
 
             _lblSummary = new Label
             {
@@ -277,32 +367,25 @@ namespace BatchIPServer
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = _clrPrimary,
                 TextAlign = ContentAlignment.MiddleRight,
-                Location = new Point(830, 7),
-                Size = new Size(492, 23)
+                AutoEllipsis = true,
+                Dock = DockStyle.Fill,
+                Margin = new Padding(D(8), 0, 0, 0)
             };
-
-            _pnlToolbar.Controls.AddRange(new Control[]
-            {
-                btnSelectAll, btnSelectUp, btnUnselectAll, btnMoveUp, btnMoveDown, btnBlink, btnOpenNcpa, _lblSummary
-            });
-            _pnlToolbar.Resize += (s, e) =>
-            {
-                int w = _pnlToolbar.ClientSize.Width - 844;
-                if (w >= 150) _lblSummary.SetBounds(830, 7, w, 23);
-            };
+            tlpToolbar.Controls.Add(_lblSummary, 1, 0);
 
             // --- Onboard Notification Banner ---
             _pnlOnboard = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 32,
-                Padding = new Padding(16, 6, 16, 4),
+                Height = D(34),
+                Padding = new Padding(D(16), D(6), D(16), D(4)),
                 BackColor = Color.FromArgb(255, 244, 206)
             };
             _lblOnboardAlert = new Label
             {
                 Dock = DockStyle.Fill,
                 AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(133, 77, 14),
                 Text = "Đang quét card Onboard..."
@@ -310,16 +393,16 @@ namespace BatchIPServer
             _pnlOnboard.Controls.Add(_lblOnboardAlert);
 
             // --- Workspace SplitContainer ---
-            var pnlWorkspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 6, 14, 10) };
+            var pnlWorkspace = new Panel { Dock = DockStyle.Fill, Padding = new Padding(D(14), D(6), D(14), D(10)) };
             _splitMain = new SplitContainer
             {
-                Size = new Size(1280, 440),
+                Size = new Size(D(1260), D(420)),
                 Dock = DockStyle.Fill,
                 Orientation = Orientation.Horizontal,
-                SplitterWidth = 6,
-                Panel1MinSize = 180,
-                Panel2MinSize = 95,
-                SplitterDistance = 280
+                SplitterWidth = D(6),
+                Panel1MinSize = D(110),
+                Panel2MinSize = D(85),
+                SplitterDistance = D(250)
             };
             pnlWorkspace.Controls.Add(_splitMain);
 
@@ -339,55 +422,59 @@ namespace BatchIPServer
                 GridColor = Color.FromArgb(230, 235, 242),
                 EnableHeadersVisualStyles = false,
                 ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.Single,
-                ColumnHeadersHeight = 32,
+                ColumnHeadersHeight = D(34),
                 ShowCellToolTips = true
             };
-            _dgv.RowTemplate.Height = 28;
+            _dgv.RowTemplate.Height = D(28);
             _dgv.DefaultCellStyle.SelectionBackColor = Color.FromArgb(214, 232, 252);
             _dgv.DefaultCellStyle.SelectionForeColor = Color.FromArgb(18, 28, 42);
             _dgv.ColumnHeadersDefaultCellStyle.BackColor = _clrHeaderBg;
             _dgv.ColumnHeadersDefaultCellStyle.ForeColor = Color.FromArgb(25, 38, 56);
             _dgv.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
 
-            _dgv.Columns.Add(new DataGridViewCheckBoxColumn { Name = "colSelect", HeaderText = "Chọn", Width = 46 });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCurrName", HeaderText = "Tên hiện tại", Width = 88, ReadOnly = true });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colType", HeaderText = "Loại card", Width = 76, ReadOnly = true });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colInfo", HeaderText = "Trạng thái · Tốc độ", Width = 122, ReadOnly = true });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDesc", HeaderText = "Phần cứng NIC", MinimumWidth = 175, ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCurrIp", HeaderText = "IP hiện tại", Width = 132, ReadOnly = true });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewName", HeaderText = "Tên mới", Width = 76 });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewIP", HeaderText = "IP mới", Width = 112 });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPrefix", HeaderText = "Prefix", Width = 48 });
+            _dgv.Columns.Add(new DataGridViewCheckBoxColumn { Name = "colSelect", HeaderText = "Chọn", Width = D(50) });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCurrName", HeaderText = "Tên hiện tại", Width = D(95), ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colType", HeaderText = "Loại card", Width = D(84), ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colInfo", HeaderText = "Trạng thái · Tốc độ", Width = D(135), ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colDesc", HeaderText = "Phần cứng NIC", MinimumWidth = D(170), ReadOnly = true, AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colCurrIp", HeaderText = "IP hiện tại", Width = D(138), ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewName", HeaderText = "Tên mới", Width = D(82) });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewIP", HeaderText = "IP mới", Width = D(118) });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colPrefix", HeaderText = "Prefix", Width = D(56) });
 
-            var colGwRole = new DataGridViewComboBoxColumn { Name = "colGwRole", HeaderText = "Chọn Gateway", Width = 96 };
+            var colGwRole = new DataGridViewComboBoxColumn { Name = "colGwRole", HeaderText = "Chọn Gateway", Width = D(108) };
             colGwRole.Items.AddRange("Gateway 1", "Gateway 2", "Không");
             _dgv.Columns.Add(colGwRole);
 
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewGW", HeaderText = "Gateway mới", Width = 108, ReadOnly = true });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMetric", HeaderText = "Metric", Width = 64 });
-            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewDNS", HeaderText = "DNS mới", Width = 108, ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewGW", HeaderText = "Gateway mới", Width = D(114), ReadOnly = true });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colMetric", HeaderText = "Metric", Width = D(72) });
+            _dgv.Columns.Add(new DataGridViewTextBoxColumn { Name = "colNewDNS", HeaderText = "DNS mới", Width = D(116), ReadOnly = true });
             _splitMain.Panel1.Controls.Add(_dgv);
 
             // Log Header + Box
-            var pnlLogBar = new Panel { Dock = DockStyle.Top, Height = 28, BackColor = Color.FromArgb(34, 38, 46) };
-            pnlLogBar.Controls.Add(new Label
+            var pnlLogBar = new Panel { Dock = DockStyle.Top, Height = D(30), BackColor = Color.FromArgb(34, 38, 46), Padding = new Padding(D(8), D(3), D(6), D(3)) };
+            var tlpLogBar = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 1 };
+            tlpLogBar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+            tlpLogBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            tlpLogBar.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+            pnlLogBar.Controls.Add(tlpLogBar);
+
+            tlpLogBar.Controls.Add(new Label
             {
                 Text = "Nhật ký thao tác (Log)  —  Mẹo: Sửa trực tiếp [Tên mới], [IP mới], [Chọn Gateway], [Metric] trên bảng phía trên",
                 ForeColor = Color.FromArgb(200, 210, 224),
                 Font = new Font("Segoe UI", 8.5F),
-                Location = new Point(8, 6),
-                AutoSize = true
-            });
-            var btnOpenBackup = MakeFlatButton("Mở thư mục Backup", 0, 3, 128, 22, new Font("Segoe UI", 8F));
-            var btnClearLog = MakeFlatButton("Xóa Log", 0, 3, 70, 22, new Font("Segoe UI", 8F));
-            pnlLogBar.Controls.Add(btnOpenBackup);
-            pnlLogBar.Controls.Add(btnClearLog);
-            pnlLogBar.Resize += (s, e) =>
-            {
-                int w = pnlLogBar.ClientSize.Width;
-                btnClearLog.Location = new Point(w - 76, 3);
-                btnOpenBackup.Location = new Point(w - 210, 3);
-            };
+                TextAlign = ContentAlignment.MiddleLeft,
+                AutoEllipsis = true,
+                Dock = DockStyle.Fill
+            }, 0, 0);
+
+            var btnOpenBackup = MakeAutoToolbarButton("Mở thư mục Backup", new Font("Segoe UI", 8F));
+            var btnClearLog = MakeAutoToolbarButton("Xóa Log", new Font("Segoe UI", 8F));
+            btnOpenBackup.Margin = new Padding(D(4), 0, D(4), 0);
+            btnClearLog.Margin = new Padding(0);
+            tlpLogBar.Controls.Add(btnOpenBackup, 1, 0);
+            tlpLogBar.Controls.Add(btnClearLog, 2, 0);
 
             _txtLog = new TextBox
             {
@@ -406,10 +493,9 @@ namespace BatchIPServer
 
             this.Controls.Add(pnlWorkspace);
             this.Controls.Add(_pnlOnboard);
-            this.Controls.Add(_pnlToolbar);
+            this.Controls.Add(pnlToolbar);
             this.Controls.Add(pnlTop);
 
-            // Bind button clicks created locally
             btnSub1.Click += (s, e) => SetSubnetPreset("192.168.1");
             btnSub254.Click += (s, e) => SetSubnetPreset("192.168.254");
             btnSeq200.Click += (s, e) => { _numStartOctet.Value = 200; _rbAsc.Checked = true; RecalculatePreview(); };
@@ -494,8 +580,9 @@ namespace BatchIPServer
 
             this.Shown += (s, e) =>
             {
-                if (_splitMain.Height > _splitMain.Panel1MinSize + _splitMain.Panel2MinSize + 10)
-                    _splitMain.SplitterDistance = Math.Max(_splitMain.Panel1MinSize, _splitMain.Height - 165);
+                int desiredLogH = D(155);
+                if (_splitMain.Height > _splitMain.Panel1MinSize + _splitMain.Panel2MinSize + D(12))
+                    _splitMain.SplitterDistance = Math.Max(_splitMain.Panel1MinSize, _splitMain.Height - desiredLogH);
 
                 RefreshAdapters();
                 _txtNamePrefix.Text = GetNextPrefixSuggestion(_savedCfg.LastPrefix, _adapters.Select(a => a.Name).ToArray());
@@ -1033,42 +1120,95 @@ namespace BatchIPServer
             return new GroupBox
             {
                 Text = title,
-                Size = new Size(420, 260),
                 Dock = DockStyle.Fill,
-                Margin = new Padding(4, 2, 4, 2),
+                Margin = new Padding(D(4), D(2), D(4), D(2)),
+                Padding = new Padding(D(8), D(4), D(8), D(6)),
                 BackColor = _clrCardBg,
                 ForeColor = Color.FromArgb(20, 45, 85),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold)
             };
         }
 
-        private Label MakeLabel(string text, int x, int y, Font font) => new Label
+        private TableLayoutPanel MakeCardGrid(int rowCount)
+        {
+            return new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                RowCount = rowCount,
+                Padding = new Padding(D(2), D(4), D(2), D(2))
+            };
+        }
+
+        private TableLayoutPanel MakeTwoColRow(float p1, float p2, int height)
+        {
+            var p = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, Margin = new Padding(0, 1, 0, D(3)), Height = height };
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, p1));
+            p.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, p2));
+            return p;
+        }
+
+        private Label MakeCellLabel(string text, Font font) => new Label
         {
             Text = text,
             Font = font,
             ForeColor = Color.Black,
-            Location = new Point(x, y),
-            AutoSize = true
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
+            Margin = new Padding(0, D(5), D(8), D(5))
         };
 
-        private Label MakeMutedLabel(string text, int x, int y, Font font) => new Label
+        private Label MakeInlineMuted(string text, Font font) => new Label
         {
             Text = text,
             Font = font,
             ForeColor = _clrTextMuted,
-            Location = new Point(x, y),
-            AutoSize = true
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            AutoEllipsis = true
         };
 
-        private CheckBox MakeOptionCheck(string text, int y, bool isChecked, Font font) => new CheckBox
+        private CheckBox MakeFlowOptionCheck(string text, bool isChecked, Font font) => new CheckBox
         {
             Text = text,
             Font = font,
             ForeColor = Color.Black,
             Checked = isChecked,
-            Location = new Point(12, y),
-            AutoSize = true
+            AutoSize = true,
+            Margin = new Padding(0, D(1), 0, D(2))
         };
+
+        private Button MakeGridButton(string text, Font font, bool isPrimary = false)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Font = font,
+                Dock = DockStyle.Fill,
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Margin = new Padding(0)
+            };
+            ApplyButtonStyle(btn, isPrimary);
+            return btn;
+        }
+
+        private Button MakeAutoToolbarButton(string text, Font font)
+        {
+            var btn = new Button
+            {
+                Text = text,
+                Font = font,
+                AutoSize = true,
+                AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                Padding = new Padding(D(6), D(2), D(6), D(2)),
+                MinimumSize = new Size(0, D(26)),
+                FlatStyle = FlatStyle.Flat,
+                Cursor = Cursors.Hand,
+                Margin = new Padding(0, 0, D(6), 0)
+            };
+            ApplyButtonStyle(btn, false);
+            return btn;
+        }
 
         private Button MakeFlatButton(string text, int x, int y, int w, int h, Font font, bool isPrimary = false)
         {
@@ -1081,6 +1221,12 @@ namespace BatchIPServer
                 FlatStyle = FlatStyle.Flat,
                 Cursor = Cursors.Hand
             };
+            ApplyButtonStyle(btn, isPrimary);
+            return btn;
+        }
+
+        private void ApplyButtonStyle(Button btn, bool isPrimary)
+        {
             if (isPrimary)
             {
                 btn.BackColor = _clrPrimary;
@@ -1096,7 +1242,6 @@ namespace BatchIPServer
                 btn.FlatAppearance.BorderSize = 1;
                 btn.FlatAppearance.MouseOverBackColor = _clrBtnHover;
             }
-            return btn;
         }
 
         #endregion

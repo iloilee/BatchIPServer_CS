@@ -17,10 +17,8 @@ namespace BatchIPServer
         {
             this.components = new System.ComponentModel.Container();
             this.SuspendLayout();
-            this.AutoScaleDimensions = new System.Drawing.SizeF(96F, 96F);
-            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
-            this.ClientSize = new System.Drawing.Size(1324, 801);
-            this.MinimumSize = new System.Drawing.Size(1160, 720);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
+            this.ClientSize = new System.Drawing.Size(1280, 760);
             this.Name = "MainForm";
             this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "BatchIP Server - Cấu Hình IP, Gateway, DNS & Tối Ưu Card Mạng Server Phòng Net";
