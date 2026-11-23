@@ -308,7 +308,13 @@ namespace BatchIPServer
                         SetInterfaceMetric(scope, idx, true, 0);
 
                     if (options.SetDns)
+                    {
                         SetDnsServers(scope, idx, currName, options.DnsServers);
+                        string dnsApplied = (options.DnsServers != null && options.DnsServers.Count > 0)
+                            ? string.Join(", ", options.DnsServers)
+                            : "Tự động (DHCP)";
+                        log("  -> Đã đặt DNS: " + dnsApplied, "INFO");
+                    }
 
                     if (options.DisableNetbios)
                     {
@@ -899,7 +905,7 @@ namespace BatchIPServer
             catch
             {
                 string mask = PrefixLengthToMask(prefixLen);
-                string args = "interface ipv4 set address name=\"" + currName + "\" static " + ip + " " + mask;
+                string args = "interface ipv4 set address name=" + ifIndex + " static " + ip + " " + mask;
                 if (!string.IsNullOrWhiteSpace(gateway))
                     args += " " + gateway + " 1";
                 RunNetsh(args);
@@ -908,35 +914,82 @@ namespace BatchIPServer
 
         private void SetDnsServers(ManagementScope scope, int ifIndex, string currName, IList<string> dnsServers)
         {
+            string[] targetDns = (dnsServers != null && dnsServers.Count > 0)
+                ? dnsServers.Where(d => !string.IsNullOrWhiteSpace(d)).Select(d => d.Trim()).ToArray()
+                : Array.Empty<string>();
+
+            // 1. Thử đặt qua WMI Win32_NetworkAdapterConfiguration.SetDNSServerSearchOrder
+            bool wmiOk = false;
             try
             {
-                bool updated = false;
-                using (var s = new ManagementObjectSearcher(scope, new ObjectQuery(
-                    "SELECT * FROM MSFT_DNSClientServerAddress WHERE InterfaceIndex=" + ifIndex + " AND AddressFamily=2")))
+                var cimV2 = new ManagementScope(CimV2ScopePath);
+                cimV2.Connect();
+                using (var s = new ManagementObjectSearcher(cimV2, new ObjectQuery(
+                    "SELECT * FROM Win32_NetworkAdapterConfiguration WHERE InterfaceIndex=" + ifIndex)))
                 {
                     foreach (ManagementObject o in s.Get())
                     {
                         using (o)
                         {
-                            o["ServerAddresses"] = dnsServers != null && dnsServers.Count > 0 ? dnsServers.ToArray() : new string[0];
-                            o.Put();
-                            updated = true;
+                            var inParams = o.GetMethodParameters("SetDNSServerSearchOrder");
+                            inParams["DNSServerSearchOrder"] = targetDns.Length > 0 ? targetDns : null;
+                            var outParams = o.InvokeMethod("SetDNSServerSearchOrder", inParams, null);
+                            uint ret = outParams != null && outParams["ReturnValue"] != null
+                                ? Convert.ToUInt32(outParams["ReturnValue"])
+                                : 99u;
+                            if (ret == 0 || ret == 1)
+                                wmiOk = true;
                         }
                     }
                 }
-                if (updated) return;
             }
             catch { }
 
-            if (dnsServers == null || dnsServers.Count == 0)
+            // 2. Xác nhận lại DNS thực tế; nếu WMI trả mã lỗi (VD card đang Disconnected) hoặc chưa khớp -> dùng netsh theo InterfaceIndex
+            if (wmiOk && VerifyDnsServersMatch(scope, ifIndex, targetDns))
+                return;
+
+            if (targetDns.Length == 0)
             {
-                RunNetsh("interface ipv4 set dnsservers name=\"" + currName + "\" source=dhcp");
+                RunNetsh("interface ipv4 set dnsservers name=" + ifIndex + " source=dhcp");
             }
             else
             {
-                RunNetsh("interface ipv4 set dnsservers name=\"" + currName + "\" static " + dnsServers[0] + " primary validate=no");
-                for (int i = 1; i < dnsServers.Count; i++)
-                    RunNetsh("interface ipv4 add dnsservers name=\"" + currName + "\" " + dnsServers[i] + " index=" + (i + 1) + " validate=no");
+                RunNetsh("interface ipv4 set dnsservers name=" + ifIndex + " source=static address=" + targetDns[0] + " register=primary validate=no");
+                for (int i = 1; i < targetDns.Length; i++)
+                    RunNetsh("interface ipv4 add dnsservers name=" + ifIndex + " address=" + targetDns[i] + " index=" + (i + 1) + " validate=no");
+            }
+        }
+
+        private bool VerifyDnsServersMatch(ManagementScope scope, int ifIndex, string[] expected)
+        {
+            try
+            {
+                var actual = new List<string>();
+                using (var s = new ManagementObjectSearcher(scope, new ObjectQuery(
+                    "SELECT ServerAddresses FROM MSFT_DNSClientServerAddress WHERE InterfaceIndex=" + ifIndex + " AND AddressFamily=2")))
+                {
+                    foreach (ManagementObject o in s.Get())
+                    {
+                        using (o)
+                        {
+                            if (o["ServerAddresses"] is string[] arr)
+                            {
+                                foreach (string d in arr)
+                                    if (!string.IsNullOrWhiteSpace(d)) actual.Add(d.Trim());
+                            }
+                        }
+                    }
+                }
+                if (expected.Length == 0) return actual.Count == 0;
+                if (actual.Count != expected.Length) return false;
+                for (int i = 0; i < expected.Length; i++)
+                    if (!string.Equals(actual[i], expected[i], StringComparison.OrdinalIgnoreCase)) return false;
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
