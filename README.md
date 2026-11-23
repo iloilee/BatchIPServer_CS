@@ -12,7 +12,13 @@ Tool cấu hình IP card mạng hàng loạt cho **Server Phòng Net** trên Win
 - Tùy chọn tối ưu server phòng net: xóa IP/Gateway cũ, tắt **NetBIOS over TCP/IP**, tắt **File and Printer Sharing**, tắt **QoS Packet Scheduler**, tắt **IPv6**, tắt tiết kiệm điện NIC.
 - Tự động sao lưu cấu hình trước khi Apply và hỗ trợ **1-click Rollback**.
 
+## Tải nhanh (GitHub Releases)
+- Tải file chạy đơn lẻ **`BatchIPServer.exe`** mới nhất tại trang [Releases](https://github.com/iloilee/BatchIPServer_CS/releases/latest) (chỉ 1 file duy nhất, chạy trực tiếp với quyền Administrator).
+
 ## Yêu cầu & Build
 - **Visual Studio** (hỗ trợ `.NET Framework 4.8` Desktop Development).
 - Mở `BatchIPServer.sln` → chọn cấu hình **`Release`** (`Any CPU`) → **Build Solution (`Ctrl + Shift + B`)**.
 - File chạy đơn lẻ đầu ra nằm tại `BatchIPServer\bin\Release\BatchIPServer.exe`.
+
+## Phát hành bản mới tự động (GitHub Actions)
+Mỗi khi tạo và push tag dạng `v*` (ví dụ `git tag v1.0.1 && git push origin v1.0.1`), workflow `.github/workflows/release.yml` sẽ tự động build bản `Release` trên `windows-latest` và đính kèm `BatchIPServer.exe` lên GitHub Releases.
